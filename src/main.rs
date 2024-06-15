@@ -11,7 +11,7 @@ fn main() {
 
     for stream in listener.incoming() {
         match stream {
-            Ok(mut _stream) => match _stream.write("HTTP:1.1 200 OK\r\n\r\n".as_bytes()) {
+            Ok(mut _stream) => match _stream.write("HTTP\\1.1 200 OK\r\n\r\n".as_bytes()) {
                 Ok(_) => println!("accepted new connection"),
                 Err(e) => println!("error: {}", e),
             },
