@@ -25,6 +25,10 @@ fn handle_request(request: Request) -> Response {
                 println!("[Echo] echoing: {}", content);
                 Response::new(StatusCode::Ok, "text/plain", content)
             }
+            "" => {
+                println!("[ERROR] unknown route: {}", s);
+                Response::new(StatusCode::Ok, "text/plain", "")
+            }
             _ => {
                 println!("[ERROR] unknown route: {}", s);
                 Response::new(StatusCode::NotFound, "text/plain", "")
