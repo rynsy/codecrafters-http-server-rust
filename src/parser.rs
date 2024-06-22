@@ -32,7 +32,7 @@ pub fn parse_http_request(input: &str) -> IResult<&str, Request> {
         input,
         Request {
             method: method.to_string(),
-            path: path.to_string(),
+            path: path.replace('\\', "/").to_string(),
             version: version.to_string(),
         },
     ))

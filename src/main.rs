@@ -1,3 +1,4 @@
+use std::borrow::BorrowMut;
 use std::error;
 
 use http_server_starter_rust::parser::parse_http_request;
@@ -7,14 +8,28 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpListener;
 
 fn handle_request(request: Request) -> Response {
-    if request.path == "/" {
-        Response {
-            status: StatusCode::Ok,
+    println!("Handling request: {:?}", request);
+    let mut parts = request.path.split('/');
+    let parts = parts.borrow_mut();
+    let _ = parts.next(); // route starts with /
+    let route = parts.next();
+    match route {
+        None => {
+            println!("Couldn't match route: split failed");
+            Response::new(StatusCode::Ok, "text/plain", "")
         }
-    } else {
-        Response {
-            status: StatusCode::NotFound,
-        }
+        Some(s) => match s {
+            "echo" => {
+                let content = parts.next();
+                let content = content.unwrap_or("");
+                println!("[Echo] echoing: {}", content);
+                Response::new(StatusCode::Ok, "text/plain", content)
+            }
+            _ => {
+                println!("[ERROR] unknown route: {}", s);
+                Response::new(StatusCode::NotFound, "text/plain", "")
+            }
+        },
     }
 }
 
@@ -35,16 +50,35 @@ fn handle_client(buf: &[u8], n: usize) -> Option<Response> {
 }
 
 fn response_to_bytes(buf: &mut [u8], response: Response) -> usize {
-    let bytes = match response.status {
-        StatusCode::Ok => "HTTP/1.1 200 OK\r\n\r\n",
-        StatusCode::Forbidden => "HTTP/1.1 500 Forbidden\r\n\r\n",
-        StatusCode::NotFound => "HTTP/1.1 404 Not Found\r\n\r\n",
-        StatusCode::InternalServerError => "HTTP/1.1 500 Internal Server Error\r\n\r\n",
-    }
-    .as_bytes();
+    let separator = "\r\n";
+    let status_line: &str = match response.status {
+        StatusCode::Ok => "HTTP/1.1 200 OK",
+        StatusCode::Forbidden => "HTTP/1.1 500 Forbidden",
+        StatusCode::NotFound => "HTTP/1.1 404 Not Found",
+        StatusCode::InternalServerError => "HTTP/1.1 500 Internal Server Error",
+    };
 
-    buf[..bytes.len()].copy_from_slice(bytes);
-    bytes.len()
+    let mut response_str = "".to_string();
+    response_str.push_str(status_line);
+    response_str.push_str(&separator);
+
+    let mut content_type = "Content-Type: ".to_string();
+    content_type.push_str(&response.content_type);
+    response_str.push_str(&content_type);
+    response_str.push_str(&separator);
+
+    let mut content_length = "Content-Length: ".to_string();
+    content_length.push_str(&response.content_length);
+    response_str.push_str(&content_length);
+    response_str.push_str(&separator);
+    response_str.push_str(&separator);
+
+    response_str.push_str(&response.response_body);
+    response_str.push_str(&separator);
+    response_str.push_str(&separator);
+
+    buf[..response_str.len()].copy_from_slice(response_str.as_bytes());
+    response_str.len()
 }
 
 #[allow(clippy::never_loop)]
