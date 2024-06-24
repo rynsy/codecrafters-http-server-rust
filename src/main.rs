@@ -26,8 +26,12 @@ fn handle_request(request: Request) -> Response {
                 Response::new(StatusCode::Ok, "text/plain", content)
             }
             "user-agent" => {
-                println!("[user-agent] returning: {}", request.user_agent);
-                Response::new(StatusCode::Ok, "text/plain", request.user_agent.as_str())
+                println!(
+                    "[user-agent] returning: {}",
+                    request.headers.get("User-Agent").unwrap_or(&"".to_string())
+                );
+                let user_agent: &String = request.headers.get("User-Agent").unwrap();
+                Response::new(StatusCode::Ok, "text/plain", user_agent)
             }
             "" => {
                 println!("[ERROR] unknown route: {}", s);

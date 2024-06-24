@@ -1,9 +1,11 @@
+use std::collections::HashMap;
+
 #[derive(Debug)]
 pub struct Request {
     pub method: String,
     pub path: String,
     pub version: String,
-    pub user_agent: String,
+    pub headers: HashMap<String, String>,
 }
 #[derive(Debug)]
 pub enum StatusCode {
