@@ -34,7 +34,7 @@ fn handle_request(request: Request) -> Response {
                 Response::new(StatusCode::Ok, "text/plain", user_agent)
             }
             "" => {
-                println!("[ERROR] unknown route: {}", s);
+                println!("[/] default route. returning 200");
                 Response::new(StatusCode::Ok, "text/plain", "")
             }
             _ => {
@@ -72,22 +72,22 @@ fn response_to_bytes(buf: &mut [u8], response: Response) -> usize {
 
     let mut response_str = "".to_string();
     response_str.push_str(status_line);
-    response_str.push_str(&separator);
+    response_str.push_str(separator);
 
     let mut content_type = "Content-Type: ".to_string();
     content_type.push_str(&response.content_type);
     response_str.push_str(&content_type);
-    response_str.push_str(&separator);
+    response_str.push_str(separator);
 
     let mut content_length = "Content-Length: ".to_string();
     content_length.push_str(&response.content_length);
     response_str.push_str(&content_length);
-    response_str.push_str(&separator);
-    response_str.push_str(&separator);
+    response_str.push_str(separator);
+    response_str.push_str(separator);
 
     response_str.push_str(&response.response_body);
-    response_str.push_str(&separator);
-    response_str.push_str(&separator);
+    response_str.push_str(separator);
+    response_str.push_str(separator);
 
     buf[..response_str.len()].copy_from_slice(response_str.as_bytes());
     response_str.len()
