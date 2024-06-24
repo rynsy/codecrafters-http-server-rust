@@ -3,6 +3,7 @@ pub struct Request {
     pub method: String,
     pub path: String,
     pub version: String,
+    pub user_agent: String,
 }
 #[derive(Debug)]
 pub enum StatusCode {

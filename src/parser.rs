@@ -2,7 +2,7 @@ use crate::types::Request;
 
 use nom::{
     bytes::complete::{tag, take_while},
-    character::complete::{alphanumeric1, space1},
+    character::complete::{alphanumeric1, multispace0, newline, space1},
     sequence::tuple,
     IResult,
 };
@@ -23,10 +23,21 @@ fn parse_version(input: &str) -> IResult<&str, &str> {
     let (input, _) = tag("HTTP/")(input)?;
     take_while(|c: char| c.is_digit(10) || c == '.')(input)
 }
+fn parse_user_agent(input: &str) -> IResult<&str, &str> {
+    let (input, _) = tag("User-Agent: ")(input)?;
+    take_while(|c: char| c != '\n')(input)
+}
 
 pub fn parse_http_request(input: &str) -> IResult<&str, Request> {
-    let (input, (method, _, path, _, version)) =
-        tuple((parse_method, space1, parse_path, space1, parse_version))(input)?;
+    let (input, (method, _, path, _, version, _, user_agent)) = tuple((
+        parse_method,
+        space1,
+        parse_path,
+        space1,
+        parse_version,
+        multispace0,
+        parse_user_agent,
+    ))(input)?;
 
     Ok((
         input,
@@ -34,6 +45,7 @@ pub fn parse_http_request(input: &str) -> IResult<&str, Request> {
             method: method.to_string(),
             path: path.replace('\\', "/").to_string(),
             version: version.to_string(),
+            user_agent: user_agent.to_string(),
         },
     ))
 }
@@ -50,11 +62,11 @@ fn parse_http() {
             Connection: keep-alive";
 
     match parse_http_request(input) {
-        Ok((input, result)) => {
-            println!("{:?}", input);
+        Ok((_, result)) => {
             assert_eq!(result.method, "GET");
             assert_eq!(result.path, "/tweets");
             assert_eq!(result.version, "1.1");
+            assert_eq!(result.user_agent, "PostmanRuntime/7.32.3");
         }
         Err(e) => {
             eprintln!("Error! {:?}", e);
