@@ -2,7 +2,7 @@ use crate::types::Request;
 
 use nom::{
     bytes::complete::{tag, take_while},
-    character::complete::{alphanumeric1, multispace0, newline, space1},
+    character::complete::{alphanumeric1, multispace0, space1},
     sequence::tuple,
     IResult,
 };
