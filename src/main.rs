@@ -1,5 +1,10 @@
 use std::borrow::BorrowMut;
+use std::env;
 use std::error;
+use std::fs::File;
+use std::io::BufReader;
+use std::io::Read;
+use std::path::Path;
 
 use http_server_starter_rust::parser::parse_http_request;
 use http_server_starter_rust::types::*;
@@ -32,6 +37,28 @@ fn handle_request(request: Request) -> Response {
                 );
                 let user_agent: &String = request.headers.get("User-Agent").unwrap();
                 Response::new(StatusCode::Ok, "text/plain", user_agent)
+            }
+            "files" => {
+                let filename = parts.next();
+                let filename = filename.unwrap_or("");
+                let directory = env::var("FILE_DIRECTORY").unwrap_or("".to_string());
+                println!("[File] looking for: {} in {}", filename, directory);
+                let path = Path::new(&directory);
+                let path = path.join(filename);
+                let file = File::open(path);
+                let content = match file {
+                    Ok(file) => {
+                        let mut buf_reader = BufReader::new(file);
+                        let mut contents = String::new();
+                        buf_reader.read_to_string(&mut contents).unwrap();
+                        contents
+                    }
+                    Err(e) => {
+                        eprintln!("[File] Couldn't open file : {:?}", e);
+                        "".to_string()
+                    }
+                };
+                Response::new(StatusCode::Ok, "application/octet-stream", content.as_str())
             }
             "" => {
                 println!("[/] default route. returning 200");
@@ -98,6 +125,12 @@ fn response_to_bytes(buf: &mut [u8], response: Response) -> usize {
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn error::Error>> {
     println!("Listening on port 4221....");
+
+    let args: Vec<String> = env::args().collect();
+    if args.len() > 2 && args[1] == "--directory" {
+        println!("Setting folder environment variable: {}", args[2]);
+        env::set_var("FILE_DIRECTORY", args[2].clone());
+    }
 
     let listener = TcpListener::bind("127.0.0.1:4221").await?;
 
