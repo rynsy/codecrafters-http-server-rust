@@ -1,9 +1,11 @@
-use crate::types::Request;
+use crate::{types::Request, HttpMethod};
 use std::collections::HashMap;
 
 use nom::{
     bytes::complete::{tag, take_while},
-    character::complete::{alphanumeric1, multispace0, not_line_ending, space0, space1},
+    character::complete::{
+        alphanumeric1, line_ending, multispace0, not_line_ending, space0, space1,
+    },
     sequence::tuple,
     IResult,
 };
@@ -30,12 +32,14 @@ fn parse_header_name(input: &str) -> IResult<&str, &str> {
 }
 
 fn parse_header(input: &str) -> IResult<&str, (&str, &str)> {
-    let (input, (name, _, _, value, _)) = tuple((
+    let (input, (_, name, _, _, value, _, _)) = tuple((
+        space0,
         parse_header_name,
         tag(":"),
         space0,
         not_line_ending,
-        multispace0,
+        line_ending,
+        line_ending,
     ))(input)?;
     Ok((input, (name, value)))
 }
@@ -50,43 +54,70 @@ pub fn parse_http_request(input: &str) -> IResult<&str, Request> {
         multispace0,
     ))(input)?;
 
-    let mut headers = HashMap::new();
-    let mut rest = input;
+    let method = match method.to_uppercase().as_str() {
+        "GET" => HttpMethod::GET,
+        "POST" => HttpMethod::POST,
+        "PATCH" => HttpMethod::PATCH,
+        "PUT" => HttpMethod::PUT,
+        "DELETE" => HttpMethod::DELETE,
+        _ => HttpMethod::UNKNOWN,
+    };
 
+    let mut headers = HashMap::new();
+
+    let mut rest = input;
     while !rest.is_empty() {
-        let (new_rest, (name, value)) = parse_header(rest)?;
-        headers.insert(name.to_string(), value.trim().to_string());
-        rest = new_rest;
-        if rest.starts_with("\r\n") {
-            break;
+        match parse_header(rest) {
+            Ok((new_rest, (name, value))) => {
+                headers.insert(name.to_string(), value.trim().to_string());
+                rest = new_rest;
+                if rest.starts_with("\r\n") {
+                    break;
+                }
+            }
+            Err(_) => {
+                break;
+            }
         }
     }
+
+    let body = if !rest.is_empty() {
+        let (_, (_, content, _)) = tuple((multispace0, not_line_ending, multispace0))(rest)?;
+        content
+    } else {
+        ""
+    };
 
     Ok((
         input,
         Request {
-            method: method.to_string(),
+            method,
             path: path.replace('\\', "/").to_string(),
             version: version.to_string(),
             headers,
+            body: body.to_string(),
         },
     ))
 }
 
 #[test]
 fn parse_http() {
-    let input = "GET /tweets HTTP/1.1
-            User-Agent: PostmanRuntime/7.32.3
-            Accept: */*
-            Cache-Control: no-cache
-            Postman-Token: 953cc42d-60e6-4155-ab58-54d958c62304
-            Host: localhost:4221
-            Accept-Encoding: gzip, deflate, br
-            Connection: keep-alive";
+    let input = "GET /tweets HTTP/1.1\r\n
+            User-Agent: PostmanRuntime/7.32.3\r\n
+            Accept: */*\r\n
+            Cache-Control: no-cache\r\n
+            Postman-Token: 953cc42d-60e6-4155-ab58-54d958c62304\r\n
+            Host: localhost:4221\r\n
+            Accept-Encoding: gzip, deflate, br\r\n
+            Connection: keep-alive\r\n
+            \r\n
+        
+            Test Body
+        ";
 
     match parse_http_request(input) {
         Ok((_, result)) => {
-            assert_eq!(result.method, "GET");
+            assert_eq!(result.method, HttpMethod::GET);
             assert_eq!(result.path, "/tweets");
             assert_eq!(result.version, "1.1");
             assert_eq!(
@@ -105,6 +136,7 @@ fn parse_http() {
                 "gzip, deflate, br"
             );
             assert_eq!(result.headers.get("Connection").unwrap(), "keep-alive");
+            assert_eq!(result.body, "Test Body");
         }
         Err(e) => {
             eprintln!("Error! {:?}", e);

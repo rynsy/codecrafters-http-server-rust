@@ -2,11 +2,13 @@ use std::borrow::BorrowMut;
 use std::env;
 use std::error;
 use std::io::Error;
+use std::path::PathBuf;
 use tokio::fs;
 
 use http_server_starter_rust::parser::parse_http_request;
 use http_server_starter_rust::types::*;
 
+use tokio::fs::File;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpListener;
 
@@ -19,29 +21,29 @@ async fn handle_request(request: Request) -> Result<Response, Error> {
     match route {
         None => {
             println!("Couldn't match route: split failed");
-            Ok(Response::new(StatusCode::Ok, "text/plain", ""))
+            Ok(Response::new(ResponseStatus::Ok, "text/plain", ""))
         }
-        Some(s) => match s {
-            "echo" => {
+        Some(path) => match (request.method, path) {
+            (HttpMethod::GET, "echo") => {
                 let content = parts.next();
                 let content = content.unwrap_or("");
                 println!("[Echo] echoing: {}", content);
-                Ok(Response::new(StatusCode::Ok, "text/plain", content))
+                Ok(Response::new(ResponseStatus::Ok, "text/plain", content))
             }
-            "user-agent" => {
+            (HttpMethod::GET, "user-agent") => {
                 println!(
                     "[user-agent] returning: {}",
                     request.headers.get("User-Agent").unwrap_or(&"".to_string())
                 );
                 let user_agent: &String = request.headers.get("User-Agent").unwrap();
-                Ok(Response::new(StatusCode::Ok, "text/plain", user_agent))
+                Ok(Response::new(ResponseStatus::Ok, "text/plain", user_agent))
             }
-            "files" => {
+            (HttpMethod::GET, "files") => {
                 let filename = parts.next();
                 let filename = filename.unwrap_or("");
 
                 if filename.is_empty() {
-                    return Ok(Response::new(StatusCode::NotFound, "text/plain", ""));
+                    return Ok(Response::new(ResponseStatus::NotFound, "text/plain", ""));
                 }
 
                 let directory = env::var("FILE_DIRECTORY").unwrap_or("".to_string());
@@ -51,21 +53,42 @@ async fn handle_request(request: Request) -> Result<Response, Error> {
                     if entry.file_name().to_str().unwrap() == filename {
                         let contents = fs::read_to_string(entry.path()).await?;
                         return Ok(Response::new(
-                            StatusCode::Ok,
+                            ResponseStatus::Ok,
                             "application/octet-stream",
                             contents.as_str(),
                         ));
                     }
                 }
-                Ok(Response::new(StatusCode::NotFound, "text/plain", ""))
+                Ok(Response::new(ResponseStatus::NotFound, "text/plain", ""))
             }
-            "" => {
+            (HttpMethod::POST, "files") => {
+                let filename = parts.next();
+                let filename = filename.unwrap_or("");
+
+                if filename.is_empty() {
+                    return Ok(Response::new(ResponseStatus::BadRequest, "text/plain", ""));
+                }
+
+                let directory = env::var("FILE_DIRECTORY").unwrap_or("".to_string());
+                let path = PathBuf::from(directory).join(filename);
+
+                if let Ok(mut file) = File::open(path).await {
+                    file.write_all(&request.body.as_bytes()).await?;
+                }
+
+                Ok(Response::new(ResponseStatus::NotFound, "text/plain", ""))
+            }
+            (HttpMethod::GET, "") => {
                 println!("[/] default route. returning 200");
-                Ok(Response::new(StatusCode::Ok, "text/plain", ""))
+                Ok(Response::new(ResponseStatus::Ok, "text/plain", ""))
             }
-            _ => {
+            (HttpMethod::UNKNOWN, _) => {
+                println!("[ERROR] unknown method");
+                Ok(Response::new(ResponseStatus::NotFound, "text/plain", ""))
+            }
+            (_, s) => {
                 println!("[ERROR] unknown route: {}", s);
-                Ok(Response::new(StatusCode::NotFound, "text/plain", ""))
+                Ok(Response::new(ResponseStatus::NotFound, "text/plain", ""))
             }
         },
     }
@@ -90,10 +113,10 @@ async fn handle_client(buf: &[u8], n: usize) -> Option<Response> {
 fn response_to_bytes(buf: &mut [u8], response: Response) -> usize {
     let separator = "\r\n";
     let status_line: &str = match response.status {
-        StatusCode::Ok => "HTTP/1.1 200 OK",
-        StatusCode::Forbidden => "HTTP/1.1 500 Forbidden",
-        StatusCode::NotFound => "HTTP/1.1 404 Not Found",
-        StatusCode::InternalServerError => "HTTP/1.1 500 Internal Server Error",
+        ResponseStatus::Ok => "HTTP/1.1 200 OK",
+        ResponseStatus::BadRequest => "HTTP/1.1 500 Forbidden",
+        ResponseStatus::NotFound => "HTTP/1.1 404 Not Found",
+        ResponseStatus::InternalServerError => "HTTP/1.1 500 Internal Server Error",
     };
 
     let mut response_str = "".to_string();
