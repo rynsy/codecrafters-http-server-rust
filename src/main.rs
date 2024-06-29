@@ -1,10 +1,8 @@
 use std::borrow::BorrowMut;
 use std::env;
 use std::error;
-use std::fs::File;
-use std::io::BufReader;
-use std::io::Read;
-use std::path::Path;
+use std::io::Error;
+use tokio::fs;
 
 use http_server_starter_rust::parser::parse_http_request;
 use http_server_starter_rust::types::*;
@@ -12,7 +10,7 @@ use http_server_starter_rust::types::*;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpListener;
 
-fn handle_request(request: Request) -> Response {
+async fn handle_request(request: Request) -> Result<Response, Error> {
     println!("Handling request: {:?}", request);
     let mut parts = request.path.split('/');
     let parts = parts.borrow_mut();
@@ -21,14 +19,14 @@ fn handle_request(request: Request) -> Response {
     match route {
         None => {
             println!("Couldn't match route: split failed");
-            Response::new(StatusCode::Ok, "text/plain", "")
+            Ok(Response::new(StatusCode::Ok, "text/plain", ""))
         }
         Some(s) => match s {
             "echo" => {
                 let content = parts.next();
                 let content = content.unwrap_or("");
                 println!("[Echo] echoing: {}", content);
-                Response::new(StatusCode::Ok, "text/plain", content)
+                Ok(Response::new(StatusCode::Ok, "text/plain", content))
             }
             "user-agent" => {
                 println!(
@@ -36,43 +34,58 @@ fn handle_request(request: Request) -> Response {
                     request.headers.get("User-Agent").unwrap_or(&"".to_string())
                 );
                 let user_agent: &String = request.headers.get("User-Agent").unwrap();
-                Response::new(StatusCode::Ok, "text/plain", user_agent)
+                Ok(Response::new(StatusCode::Ok, "text/plain", user_agent))
             }
             "files" => {
                 let filename = parts.next();
                 let filename = filename.unwrap_or("");
+
+                if filename.is_empty() {
+                    return Ok(Response::new(StatusCode::NotFound, "text/plain", ""));
+                }
+
                 let directory = env::var("FILE_DIRECTORY").unwrap_or("".to_string());
-                println!("[File] looking for: {} in {}", filename, directory);
-                let path = Path::new(&directory);
-                let path = path.join(filename);
-                let file = File::open(path);
-                let content = match file {
-                    Ok(file) => {
-                        let mut buf_reader = BufReader::new(file);
-                        let mut contents = String::new();
-                        buf_reader.read_to_string(&mut contents).unwrap();
-                        contents
+                let mut readdir = fs::read_dir(directory).await?;
+
+                while let Some(entry) = readdir.next_entry().await? {
+                    if entry.file_name().to_str().unwrap() == filename {
+                        let contents = fs::read_to_string(entry.path()).await?;
+                        return Ok(Response::new(
+                            StatusCode::Ok,
+                            "application/octet-stream",
+                            contents.as_str(),
+                        ));
                     }
-                    Err(e) => {
-                        eprintln!("[File] Couldn't open file : {:?}", e);
-                        "".to_string()
-                    }
-                };
-                Response::new(StatusCode::Ok, "application/octet-stream", content.as_str())
+                }
+                // let path = Path::new(&directory);
+                // let path = path.join(filename);
+                // let exists = fs::try_exists(&path).await?;
+                // if exists {
+                //     let contents = fs::read_to_string(path).await?;
+                //     Ok(Response::new(
+                //         StatusCode::Ok,
+                //         "application/octet-stream",
+                //         contents.as_str(),
+                //     ))
+                // } else {
+                //     eprintln!("[File] File does not exist ");
+                //     Ok(Response::new(StatusCode::NotFound, "text/plain", ""))
+                // }
+                Ok(Response::new(StatusCode::NotFound, "text/plain", ""))
             }
             "" => {
                 println!("[/] default route. returning 200");
-                Response::new(StatusCode::Ok, "text/plain", "")
+                Ok(Response::new(StatusCode::Ok, "text/plain", ""))
             }
             _ => {
                 println!("[ERROR] unknown route: {}", s);
-                Response::new(StatusCode::NotFound, "text/plain", "")
+                Ok(Response::new(StatusCode::NotFound, "text/plain", ""))
             }
         },
     }
 }
 
-fn handle_client(buf: &[u8], n: usize) -> Option<Response> {
+async fn handle_client(buf: &[u8], n: usize) -> Option<Response> {
     if n == 0 {
         eprintln!("Client handler got 0 bytes from client");
         return None;
@@ -80,7 +93,7 @@ fn handle_client(buf: &[u8], n: usize) -> Option<Response> {
     let data: Vec<u8> = buf[..n].to_vec();
     let request = String::from_utf8(data).unwrap_or("".to_string());
     match parse_http_request(request.as_str()) {
-        Ok((_, req)) => Some(handle_request(req)),
+        Ok((_, req)) => Some(handle_request(req).await.ok()?),
         Err(_) => {
             eprintln!("parse_http_request failed to parse the request");
             None
@@ -150,7 +163,7 @@ async fn main() -> Result<(), Box<dyn error::Error>> {
                         return;
                     }
                 };
-                match handle_client(&buf, n) {
+                match handle_client(&buf, n).await {
                     Some(response) => {
                         let n = response_to_bytes(&mut buf, response);
                         if let Err(e) = socket.write(&buf[..n]).await {
