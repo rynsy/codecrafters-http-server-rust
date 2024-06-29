@@ -76,7 +76,7 @@ async fn handle_request(request: Request) -> Result<Response, Error> {
                     file.write_all(&request.body.as_bytes()).await?;
                 }
 
-                Ok(Response::new(ResponseStatus::NotFound, "text/plain", ""))
+                Ok(Response::new(ResponseStatus::Created, "text/plain", ""))
             }
             (HttpMethod::GET, "") => {
                 println!("[/] default route. returning 200");
@@ -84,7 +84,7 @@ async fn handle_request(request: Request) -> Result<Response, Error> {
             }
             (HttpMethod::UNKNOWN, _) => {
                 println!("[ERROR] unknown method");
-                Ok(Response::new(ResponseStatus::NotFound, "text/plain", ""))
+                Ok(Response::new(ResponseStatus::BadRequest, "text/plain", ""))
             }
             (_, s) => {
                 println!("[ERROR] unknown route: {}", s);
