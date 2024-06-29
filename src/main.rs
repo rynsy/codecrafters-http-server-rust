@@ -114,6 +114,7 @@ fn response_to_bytes(buf: &mut [u8], response: Response) -> usize {
     let separator = "\r\n";
     let status_line: &str = match response.status {
         ResponseStatus::Ok => "HTTP/1.1 200 OK",
+        ResponseStatus::Created => "HTTP/1.1 201 Created",
         ResponseStatus::BadRequest => "HTTP/1.1 500 Forbidden",
         ResponseStatus::NotFound => "HTTP/1.1 404 Not Found",
         ResponseStatus::InternalServerError => "HTTP/1.1 500 Internal Server Error",
