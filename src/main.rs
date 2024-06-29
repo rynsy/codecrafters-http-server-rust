@@ -72,8 +72,13 @@ async fn handle_request(request: Request) -> Result<Response, Error> {
                 let directory = env::var("FILE_DIRECTORY").unwrap_or("".to_string());
                 let path = PathBuf::from(directory).join(filename);
 
+                println!(
+                    "[POST files] creating file {:?} with content: {:?}",
+                    path, request.body
+                );
+
                 if let Ok(mut file) = File::open(path).await {
-                    file.write_all(&request.body.as_bytes()).await?;
+                    file.write_all(request.body.as_bytes()).await?;
                 }
 
                 Ok(Response::new(ResponseStatus::Created, "text/plain", ""))

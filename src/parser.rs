@@ -6,7 +6,9 @@ use nom::{
     character::complete::{
         alphanumeric1, line_ending, multispace0, not_line_ending, space0, space1,
     },
-    sequence::tuple,
+    combinator::rest,
+    multi::many_till,
+    sequence::{pair, tuple},
     IResult,
 };
 
@@ -32,26 +34,27 @@ fn parse_header_name(input: &str) -> IResult<&str, &str> {
 }
 
 fn parse_header(input: &str) -> IResult<&str, (&str, &str)> {
-    let (input, (_, name, _, _, value, _, _)) = tuple((
-        space0,
+    let (input, (name, _, _, value, _)) = tuple((
         parse_header_name,
         tag(":"),
         space0,
         not_line_ending,
-        line_ending,
         line_ending,
     ))(input)?;
     Ok((input, (name, value)))
 }
 
 pub fn parse_http_request(input: &str) -> IResult<&str, Request> {
-    let (input, (method, _, path, _, version, _)) = tuple((
+    let (input, (method, _, path, _, version, _, (headers, _), _, body)) = tuple((
         parse_method,
         space1,
         parse_path,
         space1,
         parse_version,
         multispace0,
+        many_till(parse_header, pair(tag("\r\n"), tag("\r\n"))),
+        tag("\r\n"),
+        rest,
     ))(input)?;
 
     let method = match method.to_uppercase().as_str() {
@@ -63,30 +66,10 @@ pub fn parse_http_request(input: &str) -> IResult<&str, Request> {
         _ => HttpMethod::UNKNOWN,
     };
 
-    let mut headers = HashMap::new();
-
-    let mut rest = input;
-    while !rest.is_empty() {
-        match parse_header(rest) {
-            Ok((new_rest, (name, value))) => {
-                headers.insert(name.to_string(), value.trim().to_string());
-                rest = new_rest;
-                if rest.starts_with("\r\n") {
-                    break;
-                }
-            }
-            Err(_) => {
-                break;
-            }
-        }
-    }
-
-    let body = if !rest.is_empty() {
-        let (_, (_, content, _)) = tuple((multispace0, not_line_ending, multispace0))(rest)?;
-        content
-    } else {
-        ""
-    };
+    let headers = headers
+        .into_iter()
+        .map(|(name, value)| (name.to_string(), value.trim().to_string()))
+        .collect::<HashMap<_, _>>();
 
     Ok((
         input,
@@ -137,6 +120,35 @@ fn parse_http() {
             );
             assert_eq!(result.headers.get("Connection").unwrap(), "keep-alive");
             assert_eq!(result.body, "Test Body");
+        }
+        Err(e) => {
+            eprintln!("Error! {:?}", e);
+            assert_eq!(true, false);
+        }
+    }
+}
+#[test]
+fn parse_post_request_body() {
+    let input = "POST /files/file_123 HTTP/1.1                                                                 Host: localhost:2020
+User-Agent: curl/8.8.0
+Accept: */*
+Content-Type: application/octet-stream
+Content-Length: 5
+
+12345";
+    match parse_http_request(input) {
+        Ok((_, result)) => {
+            assert_eq!(result.method, HttpMethod::POST);
+            assert_eq!(result.path, "/files/file_123");
+            assert_eq!(result.version, "1.1");
+            assert_eq!(result.headers.get("User-Agent").unwrap(), "curl/8.8.0");
+            assert_eq!(result.headers.get("Accept").unwrap(), "*/*");
+            assert_eq!(
+                result.headers.get("Content-Type").unwrap(),
+                "application/octet-stream"
+            );
+            assert_eq!(result.headers.get("Content-Length").unwrap(), "5");
+            assert_eq!(result.body, "12345");
         }
         Err(e) => {
             eprintln!("Error! {:?}", e);
