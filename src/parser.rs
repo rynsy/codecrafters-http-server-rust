@@ -17,7 +17,7 @@ fn parse_method(input: &str) -> IResult<&str, &str> {
 }
 
 fn parse_path(input: &str) -> IResult<&str, &str> {
-    take_while(|c: char| is_token_char(c) || c == '/' || c == '?')(input)
+    take_while(|c: char| is_token_char(c) || c == '_' || c == '/' || c == '?')(input)
 }
 
 fn parse_version(input: &str) -> IResult<&str, &str> {

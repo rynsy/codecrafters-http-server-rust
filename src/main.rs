@@ -57,20 +57,6 @@ async fn handle_request(request: Request) -> Result<Response, Error> {
                         ));
                     }
                 }
-                // let path = Path::new(&directory);
-                // let path = path.join(filename);
-                // let exists = fs::try_exists(&path).await?;
-                // if exists {
-                //     let contents = fs::read_to_string(path).await?;
-                //     Ok(Response::new(
-                //         StatusCode::Ok,
-                //         "application/octet-stream",
-                //         contents.as_str(),
-                //     ))
-                // } else {
-                //     eprintln!("[File] File does not exist ");
-                //     Ok(Response::new(StatusCode::NotFound, "text/plain", ""))
-                // }
                 Ok(Response::new(StatusCode::NotFound, "text/plain", ""))
             }
             "" => {
