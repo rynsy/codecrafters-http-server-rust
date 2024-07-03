@@ -7,7 +7,7 @@ use nom::{
         alphanumeric1, line_ending, multispace0, not_line_ending, space0, space1,
     },
     combinator::rest,
-    multi::many_till,
+    multi::{self, many_till},
     sequence::{pair, tuple},
     IResult,
 };
@@ -39,21 +39,20 @@ fn parse_header(input: &str) -> IResult<&str, (&str, &str)> {
         tag(":"),
         space0,
         not_line_ending,
-        line_ending,
+        pair(line_ending, space0),
     ))(input)?;
     Ok((input, (name, value)))
 }
 
 pub fn parse_http_request(input: &str) -> IResult<&str, Request> {
-    let (input, (method, _, path, _, version, _, (headers, _), _, body)) = tuple((
+    let (input, (method, _, path, _, version, _, (headers, _), body)) = tuple((
         parse_method,
         space1,
         parse_path,
         space1,
         parse_version,
         multispace0,
-        many_till(parse_header, pair(tag("\r\n"), tag("\r\n"))),
-        tag("\r\n"),
+        many_till(parse_header, pair(line_ending, multispace0)),
         rest,
     ))(input)?;
 
@@ -78,21 +77,21 @@ pub fn parse_http_request(input: &str) -> IResult<&str, Request> {
             path: path.replace('\\', "/").to_string(),
             version: version.to_string(),
             headers,
-            body: body.to_string(),
+            body: body.trim().to_string(),
         },
     ))
 }
 
 #[test]
 fn parse_http() {
-    let input = "GET /tweets HTTP/1.1\r\n
-            User-Agent: PostmanRuntime/7.32.3\r\n
-            Accept: */*\r\n
-            Cache-Control: no-cache\r\n
-            Postman-Token: 953cc42d-60e6-4155-ab58-54d958c62304\r\n
-            Host: localhost:4221\r\n
-            Accept-Encoding: gzip, deflate, br\r\n
-            Connection: keep-alive\r\n
+    let input = "GET /tweets HTTP/1.1
+            User-Agent: PostmanRuntime/7.32.3
+            Accept: */*
+            Cache-Control: no-cache
+            Postman-Token: 953cc42d-60e6-4155-ab58-54d958c62304
+            Host: localhost:4221
+            Accept-Encoding: gzip, deflate, br
+            Connection: keep-alive
             \r\n
         
             Test Body
