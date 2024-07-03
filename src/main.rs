@@ -77,8 +77,15 @@ async fn handle_request(request: Request) -> Result<Response, Error> {
                     path, request.body
                 );
 
-                if let Ok(mut file) = File::open(path).await {
-                    file.write_all(request.body.as_bytes()).await?;
+                match File::create(path).await {
+                    Ok(mut file) => {
+                        let r = file.write_all(request.body.as_bytes()).await;
+                        println!("[POST files] Successfully saved file, result {:?}", r,);
+                    }
+                    Err(s) => {
+                        eprintln!("[POST files] Error saving file, error {:?}", s,);
+                        return Ok(Response::new(ResponseStatus::BadRequest, "text/plain", ""));
+                    }
                 }
 
                 Ok(Response::new(ResponseStatus::Created, "text/plain", ""))
