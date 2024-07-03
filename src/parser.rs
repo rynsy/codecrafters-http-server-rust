@@ -7,7 +7,7 @@ use nom::{
         alphanumeric1, line_ending, multispace0, not_line_ending, space0, space1,
     },
     combinator::rest,
-    multi::{self, many_till},
+    multi::many_till,
     sequence::{pair, tuple},
     IResult,
 };
