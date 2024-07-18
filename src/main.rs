@@ -223,7 +223,7 @@ fn response_to_bytes(buf: &mut [u8], response: Response) -> usize {
     if !response.content_encoding.is_empty() {
         let mut content_encoding = "Content-Encoding: ".to_string();
         content_encoding.push_str(&response.content_encoding);
-        response_str.push_str(&content_type);
+        response_str.push_str(&content_encoding);
         response_str.push_str(separator);
     }
 
