@@ -220,10 +220,12 @@ fn response_to_bytes(buf: &mut [u8], response: Response) -> usize {
     response_str.push_str(&content_type);
     response_str.push_str(separator);
 
-    let mut content_encoding = "Content-Encoding: ".to_string();
-    content_encoding.push_str(&response.content_encoding);
-    response_str.push_str(&content_type);
-    response_str.push_str(separator);
+    if !response.content_encoding.is_empty() {
+        let mut content_encoding = "Content-Encoding: ".to_string();
+        content_encoding.push_str(&response.content_encoding);
+        response_str.push_str(&content_type);
+        response_str.push_str(separator);
+    }
 
     let mut content_length = "Content-Length: ".to_string();
     content_length.push_str(&response.content_length);
