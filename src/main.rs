@@ -48,9 +48,8 @@ async fn _compress_response(
     mut response: Response,
 ) -> Result<Response, Box<dyn std::error::Error>> {
     // Implement compression logic here
-    match encoding {
-        EncodingScheme::GZIP => response.content_encoding = Box::from("gzip"),
-        EncodingScheme::NONE => response.content_encoding = Box::from("None"),
+    if let EncodingScheme::GZIP = encoding {
+        response.content_encoding = Box::from("gzip")
     }
     Ok(response)
 }
