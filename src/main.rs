@@ -12,7 +12,50 @@ use tokio::fs::File;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpListener;
 
-async fn handle_request(request: Request) -> Result<Response, Error> {
+async fn handle_request(request: Request) -> Result<Response, RequestError> {
+    let compression_scheme = match request.headers.get("Accept-Encoding") {
+        Some(encodings) => {
+            if encodings == "gzip" {
+                EncodingScheme::GZIP
+            } else {
+                EncodingScheme::NONE
+            }
+        }
+        None => EncodingScheme::NONE,
+    };
+    let decompressed_request = _decompress_request(request)
+        .await
+        .map_err(|e| RequestError::DecompressionError(e.to_string()))?;
+
+    let response = _handle_request(decompressed_request)
+        .await
+        .map_err(|e| RequestError::HandlingError(e.to_string()))?;
+
+    let compressed_response = _compress_response(compression_scheme, response)
+        .await
+        .map_err(|e| RequestError::CompressionError(e.to_string()))?;
+
+    Ok(compressed_response)
+}
+
+async fn _decompress_request(request: Request) -> Result<Request, Box<dyn std::error::Error>> {
+    // Implement decompression logic here
+    Ok(request)
+}
+
+async fn _compress_response(
+    encoding: EncodingScheme,
+    mut response: Response,
+) -> Result<Response, Box<dyn std::error::Error>> {
+    // Implement compression logic here
+    match encoding {
+        EncodingScheme::GZIP => response.content_encoding = Box::from("gzip"),
+        EncodingScheme::NONE => response.content_encoding = Box::from("None"),
+    }
+    Ok(response)
+}
+
+async fn _handle_request(request: Request) -> Result<Response, Error> {
     println!("Handling request: {:?}", request);
     let mut parts = request.path.split('/');
     let parts = parts.borrow_mut();
@@ -21,14 +64,14 @@ async fn handle_request(request: Request) -> Result<Response, Error> {
     match route {
         None => {
             println!("Couldn't match route: split failed");
-            Ok(Response::new(ResponseStatus::Ok, "text/plain", ""))
+            Ok(Response::new(ResponseStatus::Ok, "text/plain", "", ""))
         }
         Some(path) => match (request.method, path) {
             (HttpMethod::GET, "echo") => {
                 let content = parts.next();
                 let content = content.unwrap_or("");
                 println!("[Echo] echoing: {}", content);
-                Ok(Response::new(ResponseStatus::Ok, "text/plain", content))
+                Ok(Response::new(ResponseStatus::Ok, "text/plain", "", content))
             }
             (HttpMethod::GET, "user-agent") => {
                 println!(
@@ -36,14 +79,24 @@ async fn handle_request(request: Request) -> Result<Response, Error> {
                     request.headers.get("User-Agent").unwrap_or(&"".to_string())
                 );
                 let user_agent: &String = request.headers.get("User-Agent").unwrap();
-                Ok(Response::new(ResponseStatus::Ok, "text/plain", user_agent))
+                Ok(Response::new(
+                    ResponseStatus::Ok,
+                    "text/plain",
+                    "",
+                    user_agent,
+                ))
             }
             (HttpMethod::GET, "files") => {
                 let filename = parts.next();
                 let filename = filename.unwrap_or("");
 
                 if filename.is_empty() {
-                    return Ok(Response::new(ResponseStatus::NotFound, "text/plain", ""));
+                    return Ok(Response::new(
+                        ResponseStatus::NotFound,
+                        "text/plain",
+                        "",
+                        "",
+                    ));
                 }
 
                 let directory = env::var("FILE_DIRECTORY").unwrap_or("".to_string());
@@ -55,18 +108,29 @@ async fn handle_request(request: Request) -> Result<Response, Error> {
                         return Ok(Response::new(
                             ResponseStatus::Ok,
                             "application/octet-stream",
+                            "",
                             contents.as_str(),
                         ));
                     }
                 }
-                Ok(Response::new(ResponseStatus::NotFound, "text/plain", ""))
+                Ok(Response::new(
+                    ResponseStatus::NotFound,
+                    "text/plain",
+                    "",
+                    "",
+                ))
             }
             (HttpMethod::POST, "files") => {
                 let filename = parts.next();
                 let filename = filename.unwrap_or("");
 
                 if filename.is_empty() {
-                    return Ok(Response::new(ResponseStatus::BadRequest, "text/plain", ""));
+                    return Ok(Response::new(
+                        ResponseStatus::BadRequest,
+                        "text/plain",
+                        "",
+                        "",
+                    ));
                 }
 
                 let directory = env::var("FILE_DIRECTORY").unwrap_or("".to_string());
@@ -84,23 +148,38 @@ async fn handle_request(request: Request) -> Result<Response, Error> {
                     }
                     Err(s) => {
                         eprintln!("[POST files] Error saving file, error {:?}", s,);
-                        return Ok(Response::new(ResponseStatus::BadRequest, "text/plain", ""));
+                        return Ok(Response::new(
+                            ResponseStatus::BadRequest,
+                            "text/plain",
+                            "",
+                            "",
+                        ));
                     }
                 }
 
-                Ok(Response::new(ResponseStatus::Created, "text/plain", ""))
+                Ok(Response::new(ResponseStatus::Created, "text/plain", "", ""))
             }
             (HttpMethod::GET, "") => {
                 println!("[/] default route. returning 200");
-                Ok(Response::new(ResponseStatus::Ok, "text/plain", ""))
+                Ok(Response::new(ResponseStatus::Ok, "text/plain", "", ""))
             }
             (HttpMethod::UNKNOWN, _) => {
                 println!("[ERROR] unknown method");
-                Ok(Response::new(ResponseStatus::BadRequest, "text/plain", ""))
+                Ok(Response::new(
+                    ResponseStatus::BadRequest,
+                    "text/plain",
+                    "",
+                    "",
+                ))
             }
             (_, s) => {
                 println!("[ERROR] unknown route: {}", s);
-                Ok(Response::new(ResponseStatus::NotFound, "text/plain", ""))
+                Ok(Response::new(
+                    ResponseStatus::NotFound,
+                    "text/plain",
+                    "",
+                    "",
+                ))
             }
         },
     }
@@ -138,6 +217,11 @@ fn response_to_bytes(buf: &mut [u8], response: Response) -> usize {
 
     let mut content_type = "Content-Type: ".to_string();
     content_type.push_str(&response.content_type);
+    response_str.push_str(&content_type);
+    response_str.push_str(separator);
+
+    let mut content_encoding = "Content-Encoding: ".to_string();
+    content_encoding.push_str(&response.content_encoding);
     response_str.push_str(&content_type);
     response_str.push_str(separator);
 

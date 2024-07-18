@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use thiserror::Error;
 
 #[derive(Debug)]
 pub struct Request {
@@ -8,6 +9,16 @@ pub struct Request {
     pub headers: HashMap<String, String>,
     pub body: String,
 }
+#[derive(Debug, Error)]
+pub enum RequestError {
+    #[error("Decompression error: {0}")]
+    DecompressionError(String),
+    #[error("Handling error: {0}")]
+    HandlingError(String),
+    #[error("Compression error: {0}")]
+    CompressionError(String),
+}
+
 #[derive(Debug, PartialEq)]
 pub enum HttpMethod {
     GET,
@@ -16,6 +27,11 @@ pub enum HttpMethod {
     PUT,
     DELETE,
     UNKNOWN,
+}
+#[derive(Debug, PartialEq)]
+pub enum EncodingScheme {
+    GZIP,
+    NONE,
 }
 #[derive(Debug)]
 pub enum ResponseStatus {
@@ -30,11 +46,17 @@ pub struct Response {
     pub status: ResponseStatus,
     pub content_type: Box<str>,
     pub content_length: Box<str>,
+    pub content_encoding: Box<str>,
     pub response_body: Box<str>,
 }
 
 impl Response {
-    pub fn new(status: ResponseStatus, content_type: &str, response_body: &str) -> Self {
+    pub fn new(
+        status: ResponseStatus,
+        content_type: &str,
+        content_encoding: &str,
+        response_body: &str,
+    ) -> Self {
         let content_len = response_body.len();
         let content_len = content_len.to_string();
         let content_len: &str = &content_len;
@@ -43,6 +65,7 @@ impl Response {
             status,
             content_type: Box::from(content_type),
             content_length: Box::from(content_len),
+            content_encoding: Box::from(content_encoding),
             response_body: Box::from(response_body),
         }
     }
