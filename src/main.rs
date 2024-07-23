@@ -13,16 +13,9 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpListener;
 
 async fn handle_request(request: Request) -> Result<Response, RequestError> {
-    let compression_scheme = match request.headers.get("Accept-Encoding") {
-        Some(encodings) => {
-            if encodings == "gzip" {
-                EncodingScheme::GZIP
-            } else {
-                EncodingScheme::NONE
-            }
-        }
-        None => EncodingScheme::NONE,
-    };
+    let compression_scheme = _handle_compression_header(&request)
+        .await
+        .unwrap_or(EncodingScheme::NONE);
     let decompressed_request = _decompress_request(request)
         .await
         .map_err(|e| RequestError::DecompressionError(e.to_string()))?;
@@ -38,6 +31,31 @@ async fn handle_request(request: Request) -> Result<Response, RequestError> {
     Ok(compressed_response)
 }
 
+async fn _handle_compression_header(
+    request: &Request,
+) -> Result<EncodingScheme, Box<dyn std::error::Error>> {
+    let compression_scheme = match request.headers.get("Accept-Encoding") {
+        Some(encodings) => {
+            // TODO: Walk through CSV and find a valid scheme
+            //
+            let trimmed_encodings: Vec<&str> = encodings
+                .split(',')
+                .map(|e| e.trim())
+                .filter(|e| e.to_lowercase() == "gzip")
+                .collect();
+
+            if !trimmed_encodings.is_empty() {
+                EncodingScheme::GZIP
+            } else {
+                EncodingScheme::NONE
+            }
+        }
+        None => EncodingScheme::NONE,
+    };
+
+    Ok(compression_scheme)
+}
+
 async fn _decompress_request(request: Request) -> Result<Request, Box<dyn std::error::Error>> {
     // Implement decompression logic here
     Ok(request)
@@ -47,7 +65,6 @@ async fn _compress_response(
     encoding: EncodingScheme,
     mut response: Response,
 ) -> Result<Response, Box<dyn std::error::Error>> {
-    // Implement compression logic here
     if let EncodingScheme::GZIP = encoding {
         response.content_encoding = Box::from("gzip")
     }
