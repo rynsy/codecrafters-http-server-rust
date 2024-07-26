@@ -1,7 +1,10 @@
+use flate2::write::GzEncoder;
+use flate2::Compression;
 use std::borrow::BorrowMut;
 use std::env;
 use std::error;
 use std::io::Error;
+use std::io::Write;
 use std::path::PathBuf;
 use tokio::fs;
 
@@ -66,7 +69,13 @@ async fn _compress_response(
     mut response: Response,
 ) -> Result<Response, Box<dyn std::error::Error>> {
     if let EncodingScheme::GZIP = encoding {
-        response.content_encoding = Box::from("gzip")
+        response.content_encoding = Box::from("gzip");
+        let mut encoder = GzEncoder::new(Vec::new(), Compression::default());
+        encoder.write_all(response.response_body.as_bytes())?;
+        let response_compressed = encoder.finish().expect("Failed to compress");
+        let utf8_str =
+            std::str::from_utf8(response_compressed.as_slice()).expect("Failed to convert to utf8");
+        response.response_body = utf8_str.to_string().into_boxed_str();
     }
     Ok(response)
 }
