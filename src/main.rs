@@ -73,9 +73,8 @@ async fn _compress_response(
         let mut encoder = GzEncoder::new(Vec::new(), Compression::default());
         encoder.write_all(response.response_body.as_bytes())?;
         let response_compressed = encoder.finish().expect("Failed to compress");
-        let utf8_str =
-            std::str::from_utf8(response_compressed.as_slice()).expect("Failed to convert to utf8");
-        response.response_body = utf8_str.to_string().into_boxed_str();
+        let compressed_body = base64::encode(&response_compressed);
+        response.response_body = compressed_body.to_string().into_boxed_str();
     }
     Ok(response)
 }
