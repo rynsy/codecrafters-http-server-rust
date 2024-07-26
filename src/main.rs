@@ -80,6 +80,7 @@ async fn _compress_response(
             .map(|x| x.as_char())
             .collect();
         response.response_body = compressed_body.to_string().into_boxed_str();
+        response.content_length = response.response_body.len().to_string().into_boxed_str();
     }
     Ok(response)
 }
