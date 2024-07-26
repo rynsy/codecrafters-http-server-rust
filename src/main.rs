@@ -1,5 +1,6 @@
 use flate2::write::GzEncoder;
 use flate2::Compression;
+use nom::AsChar;
 use std::borrow::BorrowMut;
 use std::env;
 use std::error;
@@ -73,7 +74,11 @@ async fn _compress_response(
         let mut encoder = GzEncoder::new(Vec::new(), Compression::default());
         encoder.write_all(response.response_body.as_bytes())?;
         let response_compressed = encoder.finish().expect("Failed to compress");
-        let compressed_body = base64::encode(&response_compressed);
+        let compressed_body: String = response_compressed
+            .iter()
+            .copied()
+            .map(|x| x.as_char())
+            .collect();
         response.response_body = compressed_body.to_string().into_boxed_str();
     }
     Ok(response)
