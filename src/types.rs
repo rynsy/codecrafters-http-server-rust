@@ -47,7 +47,7 @@ pub struct Response {
     pub content_type: Box<str>,
     pub content_length: Box<str>,
     pub content_encoding: Box<str>,
-    pub response_body: Box<str>,
+    pub response_body: Vec<u8>,
 }
 
 impl Response {
@@ -55,7 +55,7 @@ impl Response {
         status: ResponseStatus,
         content_type: &str,
         content_encoding: &str,
-        response_body: &str,
+        response_body: Vec<u8>,
     ) -> Self {
         let content_len = response_body.len();
         let content_len = content_len.to_string();
@@ -66,7 +66,7 @@ impl Response {
             content_type: Box::from(content_type),
             content_length: Box::from(content_len),
             content_encoding: Box::from(content_encoding),
-            response_body: Box::from(response_body),
+            response_body,
         }
     }
 }

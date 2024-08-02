@@ -1,6 +1,6 @@
 use flate2::write::GzEncoder;
 use flate2::Compression;
-use nom::AsChar;
+use nom::AsBytes;
 use std::borrow::BorrowMut;
 use std::env;
 use std::error;
@@ -67,22 +67,24 @@ async fn _decompress_request(request: Request) -> Result<Request, Box<dyn std::e
 
 async fn _compress_response(
     encoding: EncodingScheme,
-    mut response: Response,
+    response: Response,
 ) -> Result<Response, Box<dyn std::error::Error>> {
-    if let EncodingScheme::GZIP = encoding {
-        response.content_encoding = Box::from("gzip");
-        let mut encoder = GzEncoder::new(Vec::new(), Compression::default());
-        encoder.write_all(response.response_body.as_bytes())?;
-        let response_compressed = encoder.finish().expect("Failed to compress");
-        let compressed_body: String = response_compressed
-            .iter()
-            .copied()
-            .map(|x| x.as_char())
-            .collect();
-        response.response_body = compressed_body.to_string().into_boxed_str();
-        response.content_length = response.response_body.len().to_string().into_boxed_str();
+    match encoding {
+        EncodingScheme::GZIP => {
+            let mut encoder = GzEncoder::new(Vec::new(), Compression::default());
+            encoder.write_all(response.response_body.as_slice())?;
+            let compressed_body = encoder.finish()?;
+            let compressed_response = Response::new(
+                response.status,
+                &response.content_type,
+                "gzip",
+                compressed_body,
+            );
+
+            Ok(compressed_response)
+        }
+        EncodingScheme::NONE => Ok(response),
     }
-    Ok(response)
 }
 
 async fn _handle_request(request: Request) -> Result<Response, Error> {
@@ -94,13 +96,18 @@ async fn _handle_request(request: Request) -> Result<Response, Error> {
     match route {
         None => {
             println!("Couldn't match route: split failed");
-            Ok(Response::new(ResponseStatus::Ok, "text/plain", "", ""))
+            Ok(Response::new(
+                ResponseStatus::Ok,
+                "text/plain",
+                "",
+                Vec::new(),
+            ))
         }
         Some(path) => match (request.method, path) {
             (HttpMethod::GET, "echo") => {
-                let content = parts.next();
-                let content = content.unwrap_or("");
+                let content = parts.next().unwrap_or("");
                 println!("[Echo] echoing: {}", content);
+                let content = content.as_bytes().to_vec();
                 Ok(Response::new(ResponseStatus::Ok, "text/plain", "", content))
             }
             (HttpMethod::GET, "user-agent") => {
@@ -108,7 +115,12 @@ async fn _handle_request(request: Request) -> Result<Response, Error> {
                     "[user-agent] returning: {}",
                     request.headers.get("User-Agent").unwrap_or(&"".to_string())
                 );
-                let user_agent: &String = request.headers.get("User-Agent").unwrap();
+                let user_agent = request
+                    .headers
+                    .get("User-Agent")
+                    .unwrap()
+                    .as_bytes()
+                    .to_vec();
                 Ok(Response::new(
                     ResponseStatus::Ok,
                     "text/plain",
@@ -125,7 +137,7 @@ async fn _handle_request(request: Request) -> Result<Response, Error> {
                         ResponseStatus::NotFound,
                         "text/plain",
                         "",
-                        "",
+                        Vec::new(),
                     ));
                 }
 
@@ -135,11 +147,12 @@ async fn _handle_request(request: Request) -> Result<Response, Error> {
                 while let Some(entry) = readdir.next_entry().await? {
                     if entry.file_name().to_str().unwrap() == filename {
                         let contents = fs::read_to_string(entry.path()).await?;
+                        let contents = contents.as_bytes().to_vec();
                         return Ok(Response::new(
                             ResponseStatus::Ok,
                             "application/octet-stream",
                             "",
-                            contents.as_str(),
+                            contents,
                         ));
                     }
                 }
@@ -147,7 +160,7 @@ async fn _handle_request(request: Request) -> Result<Response, Error> {
                     ResponseStatus::NotFound,
                     "text/plain",
                     "",
-                    "",
+                    Vec::new(),
                 ))
             }
             (HttpMethod::POST, "files") => {
@@ -159,7 +172,7 @@ async fn _handle_request(request: Request) -> Result<Response, Error> {
                         ResponseStatus::BadRequest,
                         "text/plain",
                         "",
-                        "",
+                        Vec::new(),
                     ));
                 }
 
@@ -182,16 +195,26 @@ async fn _handle_request(request: Request) -> Result<Response, Error> {
                             ResponseStatus::BadRequest,
                             "text/plain",
                             "",
-                            "",
+                            Vec::new(),
                         ));
                     }
                 }
 
-                Ok(Response::new(ResponseStatus::Created, "text/plain", "", ""))
+                Ok(Response::new(
+                    ResponseStatus::Created,
+                    "text/plain",
+                    "",
+                    Vec::new(),
+                ))
             }
             (HttpMethod::GET, "") => {
                 println!("[/] default route. returning 200");
-                Ok(Response::new(ResponseStatus::Ok, "text/plain", "", ""))
+                Ok(Response::new(
+                    ResponseStatus::Ok,
+                    "text/plain",
+                    "",
+                    Vec::new(),
+                ))
             }
             (HttpMethod::UNKNOWN, _) => {
                 println!("[ERROR] unknown method");
@@ -199,7 +222,7 @@ async fn _handle_request(request: Request) -> Result<Response, Error> {
                     ResponseStatus::BadRequest,
                     "text/plain",
                     "",
-                    "",
+                    Vec::new(),
                 ))
             }
             (_, s) => {
@@ -208,7 +231,7 @@ async fn _handle_request(request: Request) -> Result<Response, Error> {
                     ResponseStatus::NotFound,
                     "text/plain",
                     "",
-                    "",
+                    Vec::new(),
                 ))
             }
         },
@@ -223,7 +246,13 @@ async fn handle_client(buf: &[u8], n: usize) -> Option<Response> {
     let data: Vec<u8> = buf[..n].to_vec();
     let request = String::from_utf8(data).unwrap_or("".to_string());
     match parse_http_request(request.as_str()) {
-        Ok((_, req)) => Some(handle_request(req).await.ok()?),
+        Ok((_, req)) => match handle_request(req).await {
+            Ok(response) => Some(response),
+            Err(e) => {
+                eprintln!("handle_request returned an error: {}", e);
+                None
+            }
+        },
         Err(_) => {
             eprintln!("parse_http_request failed to parse the request");
             None
@@ -263,12 +292,10 @@ fn response_to_bytes(buf: &mut [u8], response: Response) -> usize {
     response_str.push_str(separator);
     response_str.push_str(separator);
 
-    response_str.push_str(&response.response_body);
-    response_str.push_str(separator);
-    response_str.push_str(separator);
+    let response_bytes = [response_str.as_bytes(), &response.response_body].concat();
 
-    buf[..response_str.len()].copy_from_slice(response_str.as_bytes());
-    response_str.len()
+    buf[..response_bytes.len()].copy_from_slice(&response_bytes);
+    response_bytes.len()
 }
 
 #[allow(clippy::never_loop)]
